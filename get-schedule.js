@@ -163,10 +163,6 @@
 
             icsString += "END:VCALENDAR\r\n";
 
-            console.log(icsString);
-
-            // You can then download the ICS file or use it in your application.
-            // Example to download the ICS file:
             let blob = new Blob([icsString], {type: "text/calendar"});
             let link = document.createElement("a");
             link.href = window.URL.createObjectURL(blob);
