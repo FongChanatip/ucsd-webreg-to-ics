@@ -20,41 +20,7 @@
 
     let timestamp = new Date().getTime();
 
-    // Send a get request to https://act.ucsd.edu/webreg2/svc/wradapter/secure/get-class?schedname=My+Schedule&final=&sectnum=&termcode=${quarterCode}&_=${timestamp}
-    // Example response:
-    // [{END_MM_TIME	:	50
-    // LONG_DESC	:	                              
-    // TERM_CODE	:	FA23
-    // SECT_CREDIT_HRS	:	4
-    // BEGIN_HH_TIME	:	11
-    // SECTION_NUMBER	:	231609
-    // SUBJ_CODE	:	MATH
-    // GRADE_OPTN_CD_PLUS	:	+
-    // WT_POS	:	
-    // PRIMARY_INSTR_FLAG	:	Y
-    // ROOM_CODE	:	106  
-    // FK_PCH_INTRL_REFID	:	2170420
-    // CRSE_TITLE	:	Intro/Differential Equations  
-    // END_HH_TIME	:	11
-    // GRADE_OPTION	:	L
-    // START_DATE	:	2023-09-28
-    // CRSE_CODE	:	 20D 
-    // DAY_CODE	:	1
-    // BEGIN_MM_TIME	:	0
-    // NEED_HEADROW	:	false
-    // PERSON_FULL_NAME	:	Ohm, Ko Woon                       
-    // FK_SPM_SPCL_MTG_CD	:	  
-    // PERSON_ID	:	A17365555
-    // BLDG_CODE	:	PCYNH
-    // SECT_CREDIT_HRS_PL	:	 
-    // SECTION_HEAD	:	231616
-    // ENROLL_STATUS	:	EN
-    // FK_CDI_INSTR_TYPE	:	LE
-    // SECT_CODE	:	B00
-    // FK_SEC_SCTN_NUM	:	231616}]
-
-
-
+    // Send a get request to api
     fetch(`https://act.ucsd.edu/webreg2/svc/wradapter/secure/get-class?schedname=My+Schedule&final=&sectnum=&termcode=${quarterCode}&_=${timestamp}`)
         .then(response => response.json())
         .then(data => {
@@ -62,7 +28,12 @@
             for (let i = 0; i < data.length; i++) {
                 
                 // Check if course is already in courses array
-                let course = courses.find(course => ((course.code === data[i].SUBJ_CODE + " " + data[i].CRSE_CODE) && (course.type === data[i].FK_CDI_INSTR_TYPE)) && (course.type != "MI" && course.type != "FI"));
+                let course = courses.find(course => (
+                    (course.code === data[i].SUBJ_CODE + " " + data[i].CRSE_CODE) && 
+                    (course.type === data[i].FK_CDI_INSTR_TYPE) && 
+                    (course.startTime[3] === data[i].BEGIN_HH_TIME) &&
+                    (course.startTime[4] === data[i].BEGIN_MM_TIME)) && 
+                    (course.type != "MI" && course.type != "FI"));
 
                 // If course is not in courses array, add it
                 if (!course) {
@@ -75,14 +46,6 @@
                     end.setHours(data[i].END_HH_TIME);
                     end.setMinutes(data[i].END_MM_TIME);
                     let difference = Math.abs(start.getTime() - end.getTime()) / 3600000;
-
-                    // Day codes:
-                    // 1: Monday
-                    // 2: Tuesday
-                    // 3: Wednesday
-                    // 4: Thursday
-                    // 5: Friday
-                    // 6: Saturday
 
                     course = {
                         code: data[i].SUBJ_CODE + " " + data[i].CRSE_CODE,
@@ -110,6 +73,29 @@
             // filter out courses with 0 duration
             courses = courses.filter(course => course.duration.hours !== 0 || course.duration.minutes !== 0);
 
+            // Check if start date corresponds to dayCodes
+            courses.forEach(course => {
+                let startDate = new Date(course.startDate);
+                let startDayCode = startDate.getDay();
+
+                if (!course.dayCodes.includes(startDayCode.toString())) {
+
+                    // Get delta between startDayCode and nextDayCode
+                    let delta = course.dayCodes.map(dc => parseInt(dc) > startDayCode ? parseInt(dc) - startDayCode : (parseInt(dc) + 7) - startDayCode).sort((a,b)=>a-b)[0];
+
+                    // Set start date to next day that corresponds to dayCode
+                    startDate.setDate(startDate.getDate() + (delta % 7));
+                    course.startDate = startDate.toISOString().substring(0, 10);
+                    course.startTime[0] = startDate.getFullYear();
+                    course.startTime[1] = startDate.getMonth() + 1;
+                    course.startTime[2] = startDate.getDate();
+                    course.endTime[0] = startDate.getFullYear();
+                    course.endTime[1] = startDate.getMonth() + 1;
+                    course.endTime[2] = startDate.getDate();
+                }
+
+            });
+            
             // Create an ICS string
             let icsString = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//UCSD Schedule//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n";
 
@@ -163,6 +149,7 @@
 
             icsString += "END:VCALENDAR\r\n";
 
+            // Save ICS file
             let blob = new Blob([icsString], {type: "text/calendar"});
             let link = document.createElement("a");
             link.href = window.URL.createObjectURL(blob);
